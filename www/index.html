@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>RemoteLink — تحكم عن بعد ونقل ملفات</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="vendor/peerjs.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">⟐</span> RemoteLink</div>
+  <div class="status" id="netStatus"><span class="dot"></span><span>جارٍ الاتصال بالخادم…</span></div>
+</header>
+
+<!-- ========== الشاشة الرئيسية ========== -->
+<main id="home" class="view">
+  <section class="card id-card">
+    <h2>عنوانك</h2>
+    <p class="muted">أعطِ هذا الرقم لمن تريد أن يتصل بجهازك</p>
+    <div class="my-id" id="myId">--- --- ---</div>
+    <div class="row">
+      <button class="btn ghost" id="copyIdBtn">نسخ الرقم</button>
+      <button class="btn ghost" id="newIdBtn">رقم جديد</button>
+    </div>
+    <label class="field">
+      <span>اسم هذا الجهاز</span>
+      <input id="deviceName" maxlength="32">
+    </label>
+    <label class="switch">
+      <input type="checkbox" id="unattended">
+      <span>وصول دون حضور (بكلمة مرور)</span>
+    </label>
+    <input id="unattendedPass" type="password" placeholder="كلمة مرور الوصول دون حضور" class="hidden">
+  </section>
+
+  <section class="card">
+    <h2>الاتصال بجهاز آخر</h2>
+    <form id="connectForm" class="connect-form">
+      <input id="remoteId" inputmode="numeric" placeholder="أدخل رقم الجهاز البعيد" autocomplete="off">
+      <input id="remotePass" type="password" placeholder="كلمة المرور (اختياري)">
+      <button class="btn primary" type="submit">اتصال</button>
+    </form>
+    <h3>اتصالات سابقة</h3>
+    <ul id="recentList" class="recent"></ul>
+  </section>
+</main>
+
+<!-- ========== شاشة الجلسة ========== -->
+<main id="session" class="view hidden">
+  <div class="session-bar">
+    <div class="peer-info"><span class="dot on"></span><b id="peerName">—</b> <span class="muted" id="peerIdLbl"></span></div>
+    <div class="tools">
+      <button class="btn" id="shareScreenBtn" title="مشاركة شاشتي">🖥️ <span>مشاركة شاشتي</span></button>
+      <select id="qualitySel" title="الجودة">
+        <option value="auto">جودة تلقائية</option>
+        <option value="high">عالية (1080p/30)</option>
+        <option value="balanced" selected>متوازنة (720p/24)</option>
+        <option value="low">منخفضة (480p/15)</option>
+      </select>
+      <button class="btn" id="controlBtn" title="التحكم">🖱️ <span>التحكم: إيقاف</span></button>
+      <button class="btn" id="fullBtn" title="ملء الشاشة">⛶</button>
+      <button class="btn" id="clipBtn" title="إرسال الحافظة">📋 <span>إرسال الحافظة</span></button>
+      <button class="btn danger" id="hangupBtn">إنهاء</button>
+    </div>
+  </div>
+
+  <div class="session-grid">
+    <div class="screen-wrap" id="screenWrap">
+      <video id="remoteVideo" autoplay playsinline muted></video>
+      <div class="screen-empty" id="screenEmpty">
+        <p>لا توجد شاشة مشتركة بعد</p>
+        <p class="muted">اطلب من الطرف الآخر الضغط على «مشاركة شاشتي» أو شارك شاشتك أنت</p>
+      </div>
+      <div class="sharing-badge hidden" id="sharingBadge">🔴 أنت تشارك شاشتك الآن <button class="btn tiny" id="stopShareBtn">إيقاف</button></div>
+    </div>
+
+    <aside class="side">
+      <div class="tabs">
+        <button class="tab active" data-tab="files">الملفات</button>
+        <button class="tab" data-tab="chat">الدردشة <span class="badge hidden" id="chatBadge">0</span></button>
+        <button class="tab" data-tab="perm">الصلاحيات</button>
+      </div>
+
+      <div class="tab-body" id="tab-files">
+        <div class="drop" id="dropZone">
+          <div class="drop-icon">⇪</div>
+          <p><b>اسحب الملفات أو المجلدات هنا</b></p>
+          <p class="muted">أو</p>
+          <div class="row">
+            <label class="btn">اختيار ملفات<input type="file" id="fileInput" multiple hidden></label>
+            <label class="btn">اختيار مجلد<input type="file" id="folderInput" webkitdirectory multiple hidden></label>
+          </div>
+          <p class="muted small">يُنقل مباشرة بين الجهازين (P2P مشفّر) دون رفع إلى أي خادم — بلا حد للحجم</p>
+        </div>
+        <ul class="transfers" id="transferList"></ul>
+      </div>
+
+      <div class="tab-body hidden" id="tab-chat">
+        <ul class="chat" id="chatList"></ul>
+        <form class="chat-form" id="chatForm">
+          <input id="chatInput" placeholder="اكتب رسالة…" autocomplete="off">
+          <button class="btn primary">إرسال</button>
+        </form>
+      </div>
+
+      <div class="tab-body hidden" id="tab-perm">
+        <p class="muted">ما يُسمح للطرف الآخر بفعله على جهازك:</p>
+        <label class="switch"><input type="checkbox" id="permControl" checked><span>التحكم بالفأرة ولوحة المفاتيح</span></label>
+        <label class="switch"><input type="checkbox" id="permFiles" checked><span>إرسال الملفات إليّ</span></label>
+        <label class="switch"><input type="checkbox" id="permClipboard" checked><span>مزامنة الحافظة</span></label>
+        <label class="switch"><input type="checkbox" id="autoSave" checked><span>حفظ الملفات المستلمة تلقائياً</span></label>
+        <hr>
+        <p><b>عميل التحكم المحلي:</b> <span id="agentStatus" class="muted">غير متصل</span></p>
+        <p class="muted small">لكي يتحكم الطرف الآخر بفأرة جهازك فعلياً، شغّل <code>agent.py</code> على هذا الجهاز (المتصفح وحده لا يسمح بتحريك الفأرة).</p>
+        <button class="btn" id="agentRetry">إعادة محاولة الاتصال بالعميل</button>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<!-- ========== نافذة طلب الاتصال ========== -->
+<div class="modal hidden" id="incomingModal">
+  <div class="modal-box">
+    <h2>طلب اتصال وارد</h2>
+    <p><b id="inName"></b> <span class="muted" id="inId"></span> يريد الاتصال بجهازك</p>
+    <label class="switch"><input type="checkbox" id="inPermControl" checked><span>السماح بالتحكم</span></label>
+    <label class="switch"><input type="checkbox" id="inPermFiles" checked><span>السماح بنقل الملفات</span></label>
+    <label class="switch"><input type="checkbox" id="inShare"><span>مشاركة شاشتي فوراً بعد القبول</span></label>
+    <div class="row end">
+      <button class="btn danger" id="rejectBtn">رفض</button>
+      <button class="btn primary" id="acceptBtn">قبول</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
